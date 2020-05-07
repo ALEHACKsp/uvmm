@@ -1,10 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-only or License-Ref-kk-custom */
 /*
- * Copyright (C) 2018 Kernkonzept GmbH.
+ * Copyright (C) 2018-2020 Kernkonzept GmbH.
  * Author(s): Philipp Eppelt <philipp.eppelt@kernkonzept.com>
  *            Benjamin Lamowski <benjamin.lamowski@kernkonzept.com>
- *
- * This file is distributed under the terms of the GNU General Public
- * License, version 2.  Please see the COPYING-GPL-2 file for details.
  */
 #pragma once
 
@@ -420,7 +418,7 @@ public:
           _icr[vcpu_no] = value;
         // Vol. 3A 10.6.1: "The act of writing to the low doubleword of the ICR
         // causes the IPI to be sent."
-        send_ipi(value, vcpu_no, !mmio);
+        send_ipi(_icr[vcpu_no], vcpu_no, !mmio);
         return true;
       case Icr_mmio_ext:
         _icr[vcpu_no] = (_icr[vcpu_no] & 0xffffffffU) | (value << 32);
@@ -441,10 +439,10 @@ public:
   /**
    * Register the MSI-X Controller with the IPI handler.
    *
-   * \param msix_ctlr  Pointer to the MSI-X Controller.
+   * \param msix_ctrl  Pointer to the MSI-X Controller.
    */
-  void register_msix_ctlr(cxx::Ref_ptr<Msix_controller> const &msix_ctlr)
-  { _msix_ctlr = msix_ctlr; }
+  void register_msix_ctrl(cxx::Ref_ptr<Msix_controller> const &msix_ctrl)
+  { _msix_ctrl = msix_ctrl; }
 
 private:
   static Dbg info() { return Dbg(Dbg::Irq, Dbg::Info, "IPI"); }
@@ -519,26 +517,26 @@ private:
     addr.fixed() = Address_interrupt_prefix;
     addr.dest_mode() = icr.dest_mode();
 
-    assert(_msix_ctlr != nullptr);
+    assert(_msix_ctrl != nullptr);
 
     switch (icr.dest_shorthand())
       {
       case Destination_shorthand::No_shorthand:
         addr.dest_id() = id & 0xffU;
         addr.dest_id_upper() = x2apic ? id >> 8 : 0U;
-        _msix_ctlr->send(addr.raw, data.raw);
+        _msix_ctrl->send(addr.raw, data.raw);
         break;
       case Destination_shorthand::Self:
         addr.dest_id() = vcpu_no & 0xffU;
         addr.dest_id_upper() = x2apic ? vcpu_no >> 8 : 0U;
-        _msix_ctlr->send(addr.raw, data.raw);
+        _msix_ctrl->send(addr.raw, data.raw);
         break;
       case Destination_shorthand::All_including_self:
         for (unsigned i = 0; i <= max_cpuid; ++i)
           {
             addr.dest_id() = i & 0xffU;
             addr.dest_id_upper() = x2apic ? i >> 8 : 0U;
-            _msix_ctlr->send(addr.raw, data.raw);
+            _msix_ctrl->send(addr.raw, data.raw);
           }
         break;
       case Destination_shorthand::All_excluding_self:
@@ -548,7 +546,7 @@ private:
               continue;
             addr.dest_id() = i & 0xffU;
             addr.dest_id_upper() = x2apic ? i >> 8 : 0U;
-            _msix_ctlr->send(addr.raw, data.raw);
+            _msix_ctrl->send(addr.raw, data.raw);
           }
       }
   }
@@ -570,7 +568,7 @@ private:
 
   l4_uint64_t _icr[Vmm::Cpu_dev::Max_cpus] = { 0, };
   cxx::Ref_ptr<Vmm::Cpu_dev_array> _cpus;
-  cxx::Ref_ptr<Msix_controller> _msix_ctlr;
+  cxx::Ref_ptr<Msix_controller> _msix_ctrl;
 }; // class Icr_handler
 
 class Lapic_access_handler
