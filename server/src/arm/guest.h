@@ -2,11 +2,13 @@
 /*
  * Copyright (C) 2015-2020 Kernkonzept GmbH.
  * Author(s): Sarah Hoffmann <sarah.hoffmann@kernkonzept.com>
+ *            Alexander Warg <alexander.warg@kernkonzept.com>
  *
  */
 #pragma once
 
 #include <vector>
+#include <unordered_map>
 
 #include <l4/cxx/ref_ptr>
 #include <l4/sys/vm>
@@ -15,10 +17,11 @@
 #include "device.h"
 #include "device_tree.h"
 #include "generic_guest.h"
-#include "gic.h"
+#include "gic_iface.h"
 #include "vm_ram.h"
 #include "cpu_dev_array.h"
 #include "smccc_device.h"
+#include "sys_reg.h"
 #include "vmprint.h"
 
 namespace Vmm {
@@ -66,7 +69,7 @@ public:
 
   void show_state_interrupts(FILE *, Vcpu_ptr) {}
 
-  cxx::Ref_ptr<Gic::Dist> gic() const
+  cxx::Ref_ptr<Gic::Dist_if> gic() const
   { return _gic; }
 
   void set_timer(cxx::Ref_ptr<Vdev::Core_timer> &timer)
@@ -121,6 +124,41 @@ public:
 
   void handle_ex_regs_exception(Vcpu_ptr vcpu);
 
+  using Sys_reg = Vmm::Arm::Sys_reg;
+
+  cxx::Weak_ptr<Sys_reg> sys_reg(Sys_reg::Key k)
+  { return _sys_regs.at(k); }
+
+  void add_sys_reg_aarch32(unsigned cp, unsigned op1,
+                           unsigned crn, unsigned crm,
+                           unsigned op2,
+                           cxx::Ref_ptr<Sys_reg> const &r)
+  {
+    _sys_regs[Sys_reg::Key::cp_r(cp, op1, crn, crm, op2)] = r;
+  }
+
+  void add_sys_reg_aarch32_cp64(unsigned cp, unsigned op1,
+                                unsigned crm,
+                                cxx::Ref_ptr<Sys_reg> const &r)
+  {
+    _sys_regs[Sys_reg::Key::cp_r_64(cp, op1, crm)] = r;
+  }
+
+  void add_sys_reg_aarch64(unsigned op0, unsigned op1,
+                           unsigned crn, unsigned crm,
+                           unsigned op2,
+                           cxx::Ref_ptr<Sys_reg> const &r);
+
+  void add_sys_reg_both(unsigned op0, unsigned op1,
+                        unsigned crn, unsigned crm,
+                        unsigned op2,
+                        cxx::Ref_ptr<Sys_reg> const &r)
+  {
+    add_sys_reg_aarch64(op0, op1, crn, crm, op2, r);
+    // op0 == 3 -> cp15, op0 == 2 -> cp14
+    add_sys_reg_aarch32(op0 + 12, op1, crn, crm, op2, r);
+  }
+
   Pm &pm()
   { return _pm; }
 
@@ -129,12 +167,13 @@ private:
   void check_guest_constraints(l4_addr_t ram_base) const;
   void arm_update_device_tree();
 
-  cxx::Ref_ptr<Gic::Dist> _gic;
+  cxx::Ref_ptr<Gic::Dist_if> _gic;
   cxx::Ref_ptr<Vdev::Core_timer> _timer;
   cxx::Ref_ptr<Cpu_dev_array> _cpus;
   bool guest_64bit = false;
 
   std::vector<cxx::Ref_ptr<Vmm::Smccc_device>> _smccc_handlers[Num_smcc_methods];
+  std::unordered_map<Sys_reg::Key, cxx::Ref_ptr<Sys_reg>> _sys_regs;
 };
 
 } // namespace

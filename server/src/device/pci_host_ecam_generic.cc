@@ -243,11 +243,54 @@ private:
       dev(d)
     {}
 
+    /*
+     * Disable access to the PCI device.
+     *
+     * The current configuration will be returned and has to be passed to the
+     * enabled_access function to restore the correct configuration when
+     * enabling the device again.
+     *
+     * \return The current MMIO/IO space configuration bits
+     */
+    l4_uint32_t disable_access()
+    {
+      // Disable any bar access
+      l4_uint32_t cmd_reg = 0;
+      L4Re::chksys(dev.cfg_read(Pci_hdr_command_offset, &cmd_reg, 16),
+                   "Read Command register of PCI device header.");
+      L4Re::chksys(dev.cfg_write(Pci_hdr_command_offset,
+                                 cmd_reg & ~Access_mask, 16),
+                   "Write Command register of PCI device header (disable "
+                   "decode).");
+
+      return cmd_reg & Access_mask;
+    }
+
+    /*
+     * Enable access to the PCI device.
+     *
+     * \param access  The MMIO/IO space configuration bits to enable
+     */
+    void enable_access(l4_uint32_t access)
+    {
+      l4_uint32_t cmd_reg = 0;
+      L4Re::chksys(dev.cfg_read(Pci_hdr_command_offset, &cmd_reg, 16),
+                   "Read Command register of PCI device header.");
+      // Reenable bar access
+      L4Re::chksys(dev.cfg_write(Pci_hdr_command_offset,
+                                 cmd_reg | (access & Access_mask), 16),
+                   "Write Command register of PCI device header (enable "
+                   "decode).");
+    }
+
     /**
      * Parses one bar configuration for a specific device.
      *
-     * Note: This may advance the bar offset in case of an 64 bit mmio bar. 64
-     * bit addresses take up two bars.
+     * \pre  Because this modifies the base address register the PCI device
+     *       access must be disabled before calling this method.
+     *
+     * \post This may advance the bar offset in case of an 64 bit mmio bar. 64
+     *       bit addresses take up two bars.
      */
     unsigned read_bar(unsigned bar_offs,
                       l4_uint64_t *addr, l4_uint64_t *size,
@@ -388,18 +431,13 @@ private:
   void setup_device_bars(cxx::Ref_ptr<Vmm::Virt_bus> const &vbus,
                          Hw_pci_device *hw_dev) const
   {
+    // Disable any bar access
+    l4_uint32_t access = hw_dev->disable_access();
+
     for (unsigned bar_offs = Pci_hdr_base_addr0_offset, i = 0;
          bar_offs <= Pci_hdr_base_addr5_offset; ++i)
       {
         Pci_cfg_bar &bar = hw_dev->bars[i];
-        // Disable any bar access
-        l4_uint32_t cmd_reg = 0;
-        L4Re::chksys(hw_dev->dev.cfg_read(Pci_hdr_command_offset, &cmd_reg, 16),
-                     "Read Command register of PCI device header.");
-        cmd_reg = cmd_reg & 0x3; // disable MMIO and IO accesses
-        L4Re::chksys(hw_dev->dev.cfg_write(Pci_hdr_command_offset, cmd_reg, 16),
-                     "Write Command register of PCI device header (disable "
-                     "decode).");
 
         // Read one bar configuration
         bar_offs = hw_dev->read_bar(bar_offs, &bar.io_addr, &bar.size,
@@ -411,10 +449,6 @@ private:
         // Initial map address is equal to io address
         bar.map_addr = bar.io_addr;
 
-        // Reenable bar access
-        L4Re::chksys(hw_dev->dev.cfg_write(Pci_hdr_command_offset, cmd_reg, 16),
-                     "Write Command register of PCI device header (enable "
-                     "decode).");
 
         info().printf("  bar[%u] addr=0x%llx size=0x%llx type=%s\n", i,
                       bar.io_addr, bar.size, Pci_cfg_bar::to_string(bar.type));
@@ -438,6 +472,9 @@ private:
             _vmm->add_mmio_device(region, ds_handler);
           }
       }
+
+    // Reenable bar access
+    hw_dev->enable_access(access);
   }
 
   /**
@@ -451,6 +488,9 @@ private:
    */
   void remap_bars(Hw_pci_device *hw_dev) const
   {
+    // Disable any bar access
+    l4_uint32_t access = hw_dev->disable_access();
+
     for (unsigned bar_offs = Pci_hdr_base_addr0_offset, i = 0;
          bar_offs <= Pci_hdr_base_addr5_offset; ++i)
       {
@@ -492,6 +532,9 @@ private:
             bar.map_addr = addr;
           }
       }
+
+    // Reenable bar access
+    hw_dev->enable_access(access);
   }
 
   /**

@@ -24,6 +24,7 @@
 #include <getopt.h>
 
 #include <l4/re/env>
+#include <l4/re/random>
 
 #include "debug.h"
 #include "guest.h"
@@ -96,6 +97,30 @@ setup_ramdisk(char const *ram_disk, Vdev::Host_dt const &dt,
       ram_disk, rd_start.get(), rd_size);
 }
 
+static void
+setup_kaslr_seed(Vdev::Host_dt const &dt)
+{
+  auto c = L4Re::Env::env()->get_cap<L4Re::Random>("rng");
+  if (!c)
+    return;
+
+  union
+  {
+    l4_uint64_t r;
+    char c[sizeof(l4_uint64_t)];
+  } random;
+
+  L4::Ipc::Array<char, unsigned long> msg(sizeof(random), random.c);
+  int ret = c->get_random(sizeof(random), &msg);
+  if (ret < (int) sizeof(random))
+    L4Re::throw_error(ret < 0 ? ret : -L4_EAGAIN,
+                      "Getting random seed for KASLR initialisation.");
+
+
+  auto node = dt.get().path_offset("/chosen");
+  node.setprop_u64("kaslr-seed", random.r);
+}
+
 static char const *const options = "+k:d:r:c:b:vqD:";
 static struct option const loptions[] =
 {
@@ -165,6 +190,7 @@ static int run(int argc, char *argv[])
         }
     }
 
+  Vmm::Cpu_dev::alloc_main_vcpu();
   vm_instance.create_default_devices();
 
   auto *vmm = vm_instance.vmm();
@@ -186,14 +212,14 @@ static int run(int argc, char *argv[])
   dt.set_command_line(cmd_line);
 
   if (dt.valid())
-    vm_instance.scan_device_tree(dt.get());
+    {
+      vm_instance.scan_device_tree(dt.get());
+      setup_kaslr_seed(dt);
+    }
 
   verify_cpu0_setup();
 
   setup_ramdisk(ram_disk, dt, &ram_free_list, ram);
-
-  if (dt.valid())
-    vm_instance.boot_devices(dt.get());
 
   // finally copy in the device tree
   l4_addr_t dt_boot_addr = 0;
