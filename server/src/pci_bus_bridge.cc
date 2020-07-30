@@ -31,6 +31,7 @@ register_msix_table_page(Hw_pci_device const &hwdev, unsigned bir,
                          cxx::Ref_ptr<Vmm::Virt_bus> vbus,
                          cxx::Ref_ptr<Gic::Msix_controller> const &msix_ctrl)
 {
+  assert(hwdev.has_msix);
   auto warn = Dbg(Dbg::Dev, Dbg::Warn, "PCI");
   unsigned max_msis = hwdev.msix_cap.ctrl.max_msis() + 1;
 
@@ -78,7 +79,7 @@ register_msix_table_page(Hw_pci_device const &hwdev, unsigned bir,
     Vdev::Msix::make_virt_msix_table(std::move(con),
                                      cxx::static_pointer_cast<Msi::Allocator>(
                                        vbus),
-                                     vmm, hwdev.devfn.value, max_msis,
+                                     vmm, hwdev.devfn, max_msis,
                                      msix_ctrl);
 
   warn.printf("Register MSI-X MMIO region: [0x%lx, 0x%lx]\n",
@@ -96,7 +97,7 @@ register_msix_table_page(Hw_pci_device const &hwdev, unsigned bir,
  * \param vmm         Guest pointer.
  */
 static void
-register_msix_bar(Pci_cfg_bar *bar, l4_addr_t tbl_offset,
+register_msix_bar(Pci_cfg_bar const *bar, l4_addr_t tbl_offset,
                   L4::Cap<L4Re::Dataspace> io_ds, Vmm::Guest *vmm)
 {
   auto warn = Dbg(Dbg::Dev, Dbg::Warn, "PCI");
@@ -171,25 +172,20 @@ Pci_bus_bridge::init_dev_resources(Device_lookup *devs,
   // memmap or iomap.
   for (auto &hwdev : _hwpci_devs)
     {
-      bool bars_used[5] = {false, false, false, false, false};
-
-      for (int i = 0; i < 5; ++i)
-        if (hwdev.bars[i].type != Pci_cfg_bar::Type::Unused)
-          bars_used[i] = true;
-
       auto bir = hwdev.msix_cap.tbl.bir();
-      assert(bir < 5);
+      assert(bir < Pci_config_consts::Bar_num_max_type0);
 
-      register_msix_table_page(hwdev, bir, vmm, vbus, msix_ctrl);
-
-      register_msix_bar(&hwdev.bars[bir], hwdev.msix_cap.tbl.offset(),
-                        vbus->io_ds(), vmm);
-
-      bars_used[bir] = false;
-
-      for (int i = 0; i < 5; ++i)
+      if (hwdev.has_msix)
         {
-          if (!bars_used[i])
+          register_msix_table_page(hwdev, bir, vmm, vbus, msix_ctrl);
+
+          register_msix_bar(&hwdev.bars[bir], hwdev.msix_cap.tbl.offset(),
+                            vbus->io_ds(), vmm);
+        }
+
+      for (int i = 0; i < Pci_config_consts::Bar_num_max_type0; ++i)
+        {
+          if (i == bir || hwdev.bars[i].type == Pci_cfg_bar::Type::Unused)
             continue;
 
           Guest_addr addr(hwdev.bars[i].addr);
@@ -217,6 +213,7 @@ Pci_bus_bridge::init_dev_resources(Device_lookup *devs,
               }
 
             case Pci_cfg_bar::Type::MMIO32:
+            case Pci_cfg_bar::Type::MMIO64:
               {
                 auto region = Region::ss(addr, size, Vmm::Region_type::Vbus);
                 warn().printf("Register MMIO region: [0x%lx, 0x%lx]\n",
@@ -227,11 +224,8 @@ Pci_bus_bridge::init_dev_resources(Device_lookup *devs,
                 break;
               }
 
-            case Pci_cfg_bar::Type::MMIO64: break;
             default: break;
             }
-
-          bars_used[i] = false;
         }
     }
 }

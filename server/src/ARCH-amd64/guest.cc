@@ -22,6 +22,7 @@
 #include "acpi.h"
 
 static cxx::Static_container<Vmm::Guest> guest;
+Acpi::Acpi_device_hub *Acpi::Acpi_device_hub::_hub;
 
 namespace Vmm {
 
@@ -151,7 +152,8 @@ void Guest::prepare_linux_run(Vcpu_ptr vcpu, l4_addr_t entry, Vm_ram *ram,
     {
       // read initrd addr and size from device tree
       Vmm::Guest_addr dt_addr = ram->boot2guest_phys(dt_boot_addr);
-      auto dt = Vdev::Device_tree(ram->guest2host<void *>(dt_addr));
+      Dtb::Fdt fdt(ram->guest2host<void *>(dt_addr));
+      auto dt = Vdev::Device_tree(&fdt);
       int prop_sz1, prop_sz2;
       auto node = dt.path_offset("/chosen");
       auto prop_start = node.get_prop<fdt32_t>("linux,initrd-start", &prop_sz1);
@@ -554,6 +556,8 @@ Guest::handle_exit_vmx(Vmm::Vcpu_ptr vcpu)
           warn().printf("Reading unsupported MSR 0x%lx\n", regs->cx);
           regs->ax = 0;
           regs->dx = 0;
+          vms->inject_hw_exception(13, Vmx_state::Push_error_code, 0);
+          return L4_EOK;
         }
 
       return Jump_instr;
@@ -564,7 +568,8 @@ Guest::handle_exit_vmx(Vmm::Vcpu_ptr vcpu)
       else
         {
           warn().printf("Writing unsupported MSR 0x%lx\n", regs->cx);
-          return -L4_ENOSYS;
+          vms->inject_hw_exception(13, Vmx_state::Push_error_code, 0);
+          return L4_EOK;
         }
 
     case Exit::Virtualized_eoi:
@@ -639,7 +644,7 @@ Guest::run_vmx(Vcpu_ptr vcpu)
         {
           Err().printf("Resume failed with error %ld\n", e);
           enter_kdebug("FAILURE IN VMM RESUME");
-          shutdown(1);
+          halt_vm();
         }
       else
         {
