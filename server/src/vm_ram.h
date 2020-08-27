@@ -63,7 +63,7 @@ private:
 /**
  * The memory device which manages the RAM available to the guest.
  */
-class Vm_ram
+class Vm_ram final
 : public Vdev::Device,
   public Monitor::Vm_ram_cmd_handler<Monitor::Enabled, Vm_ram>
 {
@@ -203,7 +203,7 @@ private:
    * \param baseaddr  Guest physical start address of the dataspce.
    * \param ds_offset Offset into the dataspace where to start mapping.
    * \param size      Size of the area to map.
-   * \param memap     Geust memory map where to register the new region.
+   * \param memap     Guest memory map where to register the new region.
    *
    * \return Index into _regions of the newly added region.
    */

@@ -14,13 +14,14 @@
 #include "vm_ram.h"
 #include "virt_bus.h"
 #include "monitor/vm_cmd_handler.h"
+#include "pm.h"
 
 namespace Vmm {
 
 /**
  * The main instance of a hardware-virtualized guest.
  */
-class Vm
+class Vm final
 : public Vdev::Device_lookup,
   public Monitor::Vm_cmd_handler<Monitor::Enabled, Vm>
 {
@@ -44,6 +45,9 @@ public:
   cxx::Ref_ptr<Vmm::Cpu_dev_array> cpus() const override
   { return _cpus; }
 
+  cxx::Ref_ptr<Vmm::Pm> pm() const override
+  { return _pm; }
+
   /**
    * \see Device_lookup::get_or_create_ic(Vdev::Dt_node const &node,
    *                                      cxx::Ref_ptr<Gic::Ic> *ic_ptr)
@@ -66,6 +70,9 @@ public:
     _vbus = Vdev::make_device<Vmm::Virt_bus>(vbus_cap, _vmm->registry());
 
     _cpus = Vdev::make_device<Vmm::Cpu_dev_array>();
+
+    _pm = Vdev::make_device<Vmm::Pm>();
+
   }
 
   void add_device(Vdev::Dt_node const &node,
@@ -118,5 +125,6 @@ private:
   cxx::Ref_ptr<Vmm::Vm_ram> _ram;
   cxx::Ref_ptr<Vmm::Virt_bus> _vbus;
   cxx::Ref_ptr<Vmm::Cpu_dev_array> _cpus;
+  cxx::Ref_ptr<Vmm::Pm> _pm;
 };
 }

@@ -18,9 +18,9 @@
 
 namespace Vdev {
 
-class Io_proxy : public Device
+class Io_proxy final : public Device
 {
-  class Io_irq_svr : public Irq_svr
+  class Io_irq_svr final : public Irq_svr
   {
   public:
     using Irq_svr::Irq_svr;
@@ -39,8 +39,8 @@ public:
    *
    * \param devs  Pointer to Device_lookup interface used to prepare the factory
    *
-   * To create non virtual devices there might be some additional preparations
-   * needed. This method has to be invoked before trying to create non physical
+   * To create non-virtual devices there might be some additional preparations
+   * needed. This method has to be invoked before trying to create non-physical
    * devices.
    */
   static void prepare_factory(Device_lookup const *devs);
