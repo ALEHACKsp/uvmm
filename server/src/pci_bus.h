@@ -127,9 +127,9 @@ public:
     _devfns.init();
 
     auto *hdr = header();
-    // Linux' x86 PCI_direct code sanity checks for class code of first device,
-    // either PCI_CLASS_DISPLAY_VGA(0x0300) or PCI_CLASS_BRIDGE_HOST(0x00)
-    // device should be there. --> First device is BRIDGE_HOST device
+    // Linux' x86 PCI_direct code sanity checks for a device with class code
+    // PCI_CLASS_DISPLAY_VGA(0x0300) or PCI_CLASS_BRIDGE_HOST(0x00) or for a
+    // device of vendor INTEL or COMPAQ.
     // see linux/arch/x86/pci/direct.c
     hdr->classcode[2] = Pci_class_code_bridge_device;
     hdr->classcode[1] = Pci_subclass_code_host;
@@ -239,7 +239,7 @@ private:
                      msix_cap_addr);
       }
     else
-      dbg().printf("Did not find an MSI-X capability for %x\n", devfn.value);
+      dbg().printf("Did not find an MSI-X capability for 0x%x\n", devfn.value);
     return true;
   }
 
@@ -410,14 +410,14 @@ private:
       {
         bar_cfg->addr = bar_orig & ~0x3;
         bar_cfg->type = Pci_cfg_bar::IO;
-        info().printf("PCI IO BAR, size = %lx, addr = %llx\n",
+        info().printf("PCI IO BAR, size = 0x%lx, addr = 0x%llx\n",
                       bar_cfg->size, bar_cfg->addr);
       }
     else if ((bar_orig & 0x6) == 0) // MMIO32
       {
         bar_cfg->addr = bar_orig & ~0xf;
         bar_cfg->type = Pci_cfg_bar::MMIO32;
-        info().printf("PCI MMIO32 BAR, size = %lx, addr = %llx\n",
+        info().printf("PCI MMIO32 BAR, size = 0x%lx, addr = 0x%llx\n",
                       bar_cfg->size, bar_cfg->addr);
       }
     else if (is_64) // MMIO64
@@ -425,7 +425,7 @@ private:
         bar_cfg->addr = bar_orig & ~0xf;
         bar_cfg->addr |= static_cast<l4_uint64_t>(bar_orig_high) << 32;
         bar_cfg->type = Pci_cfg_bar::MMIO64;
-        info().printf("PCI MMIO64 BAR, size = %lx, addr = %llx\n",
+        info().printf("PCI MMIO64 BAR, size = 0x%lx, addr = 0x%llx\n",
                       bar_cfg->size, bar_cfg->addr);
       }
 
@@ -772,7 +772,8 @@ public:
           _bus->cfg_space_read(Devfn_address(_cfg_addr.dev().get(),
                                              _cfg_addr.func().get()),
                                reg, 0, width, value);
-          trace().printf("IN access @0x%x/%d --> 0x%x\n", port, width, *value);
+          trace().printf("IN access @0x%x/%d reg: 0x%x --> 0x%x\n", port, width,
+                         reg, *value);
           return;
         }
       }
