@@ -98,7 +98,7 @@ struct Interrupt_map
   std::map<l4_uint32_t, Dev_mapping> map; /// Device id - Interrupt map
 };
 
-class Pci_host_ecam_generic final
+class Pci_host_ecam_generic
 : public Pci_dev,
   public Device,
   public Vmm::Mmio_device_t<Pci_host_ecam_generic>
@@ -467,8 +467,10 @@ private:
                                           Vmm::Region_flags::Moveable);
             // Disable eager mapping, because this gets most likely remapped anyway
             cxx::Ref_ptr<Ds_handler> ds_handler =
-              Vdev::make_device<Ds_handler>(vbus->io_ds(), 0x0, bar.size, bar.io_addr,
-                                            Ds_handler::None);
+              Vdev::make_device<Ds_handler>(
+                  cxx::make_ref_obj<Vmm::Ds_manager>(vbus->io_ds(),
+                                                     bar.io_addr, bar.size),
+                  0, Ds_handler::None);
             _vmm->add_mmio_device(region, ds_handler);
           }
       }

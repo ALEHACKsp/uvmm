@@ -50,7 +50,7 @@ Dbg trace(Dbg::Dev, Dbg::Warn, "optee");
  * capability provided by Fiasco and point `l4vmm,dscap` to an appropriately
  * configured IO. When using a proxy, set `l4vmm,cap` only.
  */
-class Optee final : public Vdev::Device, public Vmm::Smccc_device
+class Optee : public Vdev::Device, public Vmm::Smccc_device
 {
   enum
   {
@@ -130,7 +130,9 @@ public:
       }
 
     trace.printf("OP-TEE start = 0x%lx  size = 0x%lx\n", p[1], p[2]);
-    auto handler = Vdev::make_device<Ds_handler>(iods, 0, p[2], p[1]);
+    auto handler = Vdev::make_device<Ds_handler>(
+        cxx::make_ref_obj<Vmm::Ds_manager>(iods, p[1], p[2])
+      );
     // XXX should check that the resource is actually available
     vmm->add_mmio_device(Vmm::Region(Vmm::Guest_addr(p[1]),
                                      Vmm::Guest_addr(p[1] + p[2] - 1),

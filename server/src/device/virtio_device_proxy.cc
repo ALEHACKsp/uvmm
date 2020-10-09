@@ -57,7 +57,7 @@ static Dbg info(Dbg::Dev, Dbg::Info, "VioDrv");
  * The guest device may notify the driver about queue changes by writing
  * the appropriate driver_notify_index of the queue to the queue_notify field.
  */
-class Virtio_device_proxy final
+class Virtio_device_proxy
 : public Vmm::Read_mapped_mmio_device_t<Virtio_device_proxy, l4virtio_config_hdr_t>,
   public L4::Epiface_t<Virtio_device_proxy, L4virtio::Device>,
   public Vdev::Device
@@ -179,12 +179,11 @@ public:
         return -L4_ERANGE;
       }
 
-    // XXX Ds_handler should RAII the cap
     auto ds = L4Re::chkcap(L4::Epiface::server_iface()->rcv_cap<L4Re::Dataspace>(0));
     L4Re::chksys(L4::Epiface::server_iface()->realloc_rcv_cap(0));
 
     _vmm->add_mmio_device(Vmm::Region::ss(Vmm::Guest_addr(_drvmem_base + ds_base), sz, Vmm::Region_type::Virtual),
-                          Vdev::make_device<Ds_handler>(ds, 0, sz, offset));
+                          Vdev::make_device<Ds_handler>(cxx::make_ref_obj<Vmm::Ds_manager>(ds, offset, sz)));
 
     return 0;
   }

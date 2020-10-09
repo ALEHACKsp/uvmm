@@ -24,6 +24,29 @@
 static cxx::Static_container<Vmm::Guest> guest;
 Acpi::Acpi_device_hub *Acpi::Acpi_device_hub::_hub;
 
+namespace {
+
+static inline void
+fxrstor64(char *addr)
+{
+  __asm__ __volatile__("fxrstor64 %0"
+                       :
+                       : "m" (*addr)
+                       : "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5",
+                         "xmm6", "xmm7", "xmm8", "xmm9", "xmm10", "xmm11",
+                         "xmm12", "xmm13", "xmm14", "xmm15", "mm0", "mm1",
+                         "mm2", "mm3", "mm4", "mm5", "mm6", "mm7");
+}
+
+static inline void
+fxsave64(char *addr)
+{
+  __asm__ __volatile__("fxsave64 %0"
+                       : "=m" (*addr));
+}
+
+}
+
 namespace Vmm {
 
 Guest *
@@ -115,6 +138,7 @@ Guest::prepare_platform(Vdev::Device_lookup *devs)
   auto cpus = devs->cpus();
   _icr_handler->register_cpus(cpus);
   unsigned const max_cpuid = cpus->max_cpuid();
+  _ptw = cxx::make_ref_obj<Pt_walker>(devs->ram(), get_max_physical_address_bit());
   for (unsigned id = 0; id <= max_cpuid; ++id)
     {
       auto cpu = cpus->cpu(id);
@@ -122,7 +146,7 @@ Guest::prepare_platform(Vdev::Device_lookup *devs)
 
       Vcpu_ptr vcpu = cpu->vcpu();
       vcpu->user_task = _task.cap();
-      vcpu.set_pt_walker(&_ptw);
+      vcpu.set_pt_walker(_ptw.get());
 
       unsigned vcpu_id = vcpu.get_vcpu_id();
       _apics->register_core(vcpu_id);
@@ -628,9 +652,18 @@ Guest::run_vmx(Vcpu_ptr vcpu)
   L4::Cap<L4::Thread> myself;
   trace().printf("Starting vCPU 0x%lx\n", vcpu->r.ip);
 
+  // Architecturally defined as 512 byte buffer but processor does not write
+  // bytes 464:511.
+  char fpu_state[464] __attribute__((aligned(16)));
+  fxsave64(fpu_state);
+
   while (1)
     {
+      // We do not save/restore the AVX state in the assumption that gcc does
+      // not generate such code (yet).
+      fxrstor64(fpu_state);
       l4_msgtag_t tag = myself->vcpu_resume_commit(myself->vcpu_resume_start());
+      fxsave64(fpu_state);
       auto e = l4_error(tag);
 
       if (e == 1)
@@ -660,7 +693,7 @@ Guest::run_vmx(Vcpu_ptr vcpu)
             }
         }
 
-      if (vm->interrupts_enabled())
+      if (vm->can_inject_interrupt())
         {
           vm->disable_interrupt_window();
           int irq = lapic(vcpu)->next_pending_irq();
